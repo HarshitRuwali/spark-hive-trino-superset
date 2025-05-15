@@ -1,23 +1,23 @@
 <configuration>
   <property>
     <name>fs.defaultFS</name>
-    <value>s3a://p2p-analytics</value>
+    <value>${FS_DEFAULT_FS}</value>
   </property>
   <property>
     <name>fs.s3a.access.key</name>
-    <value>A34JAH23234223232</value>
+    <value>${AWS_ACCESS_KEY_ID}</value>
   </property>
   <property>
     <name>fs.s3a.secret.key</name>
-    <value>K9/323322322</value>
+    <value>${AWS_SECRET_ACCESS_KEY}</value>
   </property>
   <property>
     <name>fs.s3a.endpoint</name>
-    <value>s3.amazonaws.com</value>
+    <value>${S3_ENDPOINT}</value>
   </property>
   <property>
     <name>fs.s3a.path.style.access</name>
-    <value>true</value>
+    <value>${S3_PATH_STYLE}</value>
   </property>
   <property>
     <name>fs.s3a.impl</name>

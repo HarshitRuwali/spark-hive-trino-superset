@@ -1,0 +1,9 @@
+FROM bde2020/hive:2.3.2-postgresql-metastore
+
+# Copy the template and script
+COPY conf/core-site-template.xml /opt/hive/conf/core-site-template.xml
+COPY entrypoint.sh /entrypoint.sh
+
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

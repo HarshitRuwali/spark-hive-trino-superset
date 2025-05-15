@@ -1,42 +1,51 @@
 services:
-  mysql:
-    image: mysql:5.7
+  postgres:
+    image: postgres:13
     platform: linux/amd64
     environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: metastore
-      MYSQL_USER: hive
-      MYSQL_PASSWORD: hive
+      POSTGRES_DB: metastore
+      POSTGRES_USER: hive
+      POSTGRES_PASSWORD: hive
     ports:
-      - "3306:3306"
+      - "5432:5432"
+    networks:
+      - spark-hive-trino-net
+
 
   hive-metastore:
-    image: bde2020/hive:2.3.2-postgresql-metastore
-    platform: linux/amd64
+    build: ./hive-metastore
     environment:
-      HIVE_METASTORE_DB_TYPE: mysql
+      HIVE_METASTORE_DB_TYPE: postgres
       HIVE_DB_NAME: metastore
       HIVE_DB_USER: hive
       HIVE_DB_PASSWORD: hive
       SERVICE_NAME: metastore
+      HDFS_NAMENODE_URI: ""
+      CORE_CONF_fs_defaultFS: s3a://p2p-analytics
     depends_on:
-      - mysql
+      - postgres
     ports:
       - "9083:9083"
+    volumes:
+      - ./spark/conf/core-site.xml:/opt/hive/conf/core-site.xml
+      - ./spark/conf/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
+    networks:
+      - spark-hive-trino-net
 
   spark-master:
-    image: bitnami/spark:3.4.1
+    image: bitnami/spark:3.4
     environment:
-    - SPARK_MODE=master
-    command: bash -c "/opt/spark/bin/spark-class org.apache.spark.deploy.master.Master"
+      - SPARK_MODE=master
     ports:
       - "7077:7077"
       - "8080:8080"
     volumes:
-      - ./spark/conf:/opt/spark/conf
+      - ./spark/conf:/opt/bitnami/spark/conf
+    networks:
+      - spark-hive-trino-net
 
   spark-worker:
-    image: bitnami/spark:3.4.1
+    image: bitnami/spark:3.4
     depends_on:
       - spark-master
     environment:
@@ -46,6 +55,21 @@ services:
       - "8081:8081"
     volumes:
       - ./spark/conf:/opt/bitnami/spark/conf
+    networks:
+      - spark-hive-trino-net
+
+  spark-init:
+    image: bitnami/spark:3.4
+    depends_on:
+      - spark-master
+      - hive-metastore
+    volumes:
+      - ./spark/conf:/opt/bitnami/spark/conf
+      - ./spark/jobs:/opt/bitnami/spark/jobs
+    command: >
+      bash -c "sleep 20 && /opt/bitnami/spark/bin/spark-submit --master spark://spark-master:7077 /opt/bitnami/spark/jobs/init_hive_tables.py"
+    networks:
+      - spark-hive-trino-net
 
   trino:
     image: trinodb/trino:440
@@ -54,23 +78,31 @@ services:
     volumes:
       - ./trino/etc:/etc/trino
       - ./trino/data:/var/trino/data
+    networks:
+      - spark-hive-trino-net
 
-  superset:
-    image: apache/superset
-    environment:
-      SUPERSET_LOAD_EXAMPLES: "no"
-      SUPERSET_SECRET_KEY: "supersecretkey"
-      ADMIN_USERNAME: admin
-      ADMIN_EMAIL: admin@superset.com
-      ADMIN_PASSWORD: admin
-    ports:
-      - "8089:8088"
-    depends_on:
-      - trino
-    entrypoint: >
-      /bin/sh -c "
-      superset db upgrade &&
-      superset fab create-admin --username admin --firstname Superset --lastname Admin --email admin@superset.com --password admin &&
-      superset init &&
-      superset run -h 0.0.0.0 -p 8088
-      "
+  # superset:
+  #   image: apache/superset
+  #   environment:
+  #     SUPERSET_LOAD_EXAMPLES: "no"
+  #     SUPERSET_SECRET_KEY: "supersecretkey"
+  #     ADMIN_USERNAME: admin
+  #     ADMIN_EMAIL: admin@superset.com
+  #     ADMIN_PASSWORD: admin
+  #   ports:
+  #     - "8089:8088"
+  #   depends_on:
+  #     - trino
+  #   entrypoint: >
+  #     /bin/sh -c "
+  #     superset db upgrade &&
+  #     superset fab create-admin --username admin --firstname Superset --lastname Admin --email admin@superset.com --password admin &&
+  #     superset init &&
+  #     superset run -h 0.0.0.0 -p 8088
+  #     "
+  #   networks:
+  #     - spark-hive-trino-net
+
+networks:
+  spark-hive-trino-net:
+    driver: bridge

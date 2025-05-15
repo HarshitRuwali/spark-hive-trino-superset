@@ -1,0 +1,77 @@
+FROM bde2020/hive:2.3.2-postgresql-metastore
+
+USER root
+
+# # Patch the APT sources and install wget
+RUN sed -i 's|http://deb.debian.org|http://archive.debian.org|g' /etc/apt/sources.list && \
+    sed -i 's|http://security.debian.org|http://archive.debian.org/debian-security|g' /etc/apt/sources.list && \
+    echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99no-check-valid-until && \
+    echo 'Acquire::AllowInsecureRepositories "true";' >> /etc/apt/apt.conf.d/99no-check-valid-until && \
+    echo 'APT::Get::AllowUnauthenticated "true";' >> /etc/apt/apt.conf.d/99no-check-valid-until && \
+    apt-get update || true && \
+    apt-get -o Acquire::Check-Valid-Until=false -o Acquire::AllowInsecureRepositories=true -o APT::Get::AllowUnauthenticated=true install -y wget
+
+# # Download Hadoop 2.7.5 compatible AWS S3 dependencies
+# RUN mkdir -p /opt/hadoop/share/hadoop/common/lib/ && \
+#     wget -P /tmp/ https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/2.7.5/hadoop-aws-2.7.5.jar && \
+#     wget -P /tmp/ https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.11.271/aws-java-sdk-bundle-1.11.271.jar && \
+#     cp /tmp/hadoop-aws-2.7.5.jar /opt/hadoop/share/hadoop/common/lib/ && \
+#     cp /tmp/aws-java-sdk-bundle-1.11.271.jar /opt/hadoop/share/hadoop/common/lib/
+
+
+# Install compatible AWS SDK for Hadoop 2.7.5
+RUN mkdir -p /opt/hadoop/share/hadoop/common/lib/ && \
+    wget -P /tmp/ https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/2.7.5/hadoop-aws-2.7.5.jar && \
+    wget -P /tmp/ https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-core/1.10.6/aws-java-sdk-core-1.10.6.jar && \
+    wget -P /tmp/ https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-s3/1.10.6/aws-java-sdk-s3-1.10.6.jar && \
+    wget -P /tmp/ https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-kms/1.10.6/aws-java-sdk-kms-1.10.6.jar && \
+    wget -P /tmp/ https://repo1.maven.org/maven2/org/apache/httpcomponents/httpclient/4.5/httpclient-4.5.jar && \
+    wget -P /tmp/ https://repo1.maven.org/maven2/commons-logging/commons-logging/1.2/commons-logging-1.2.jar && \
+    wget -P /tmp/ https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-core/2.6.6/jackson-core-2.6.6.jar && \
+    wget -P /tmp/ https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-databind/2.6.6/jackson-databind-2.6.6.jar && \
+    wget -P /tmp/ https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-annotations/2.6.6/jackson-annotations-2.6.6.jar && \
+    cp /tmp/*.jar /opt/hadoop/share/hadoop/common/lib/
+
+ENV HIVE_AUX_JARS_PATH=/opt/hive/auxlib
+RUN mkdir -p /opt/hive/auxlib && \
+    cp /tmp/*.jar /opt/hive/auxlib/
+
+# Set classpath for Hadoop
+ENV HADOOP_CLASSPATH="/opt/hadoop/share/hadoop/common/lib/*"
+
+# # Create a core-site.xml with S3A config properties to ensure proper loading
+# RUN mkdir -p /opt/hadoop/etc/hadoop/ && \
+#     echo '<?xml version="1.0"?>' > /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '<configuration>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '    <property>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '        <name>fs.s3a.impl</name>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '        <value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '    </property>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '    <property>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '        <name>fs.s3.impl</name>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '        <value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '    </property>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '    <property>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '        <name>fs.s3a.aws.credentials.provider</name>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '        <value>org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider</value>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '    </property>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '    <property>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '        <name>fs.s3a.connection.maximum</name>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '        <value>100</value>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '    </property>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '    <property>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '        <name>fs.s3a.endpoint</name>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '        <value>s3.amazonaws.com</value>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '    </property>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '    <property>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '        <name>fs.s3a.connection.ssl.enabled</name>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '        <value>true</value>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '    </property>' >> /opt/hadoop/etc/hadoop/core-site.xml && \
+#     echo '</configuration>' >> /opt/hadoop/etc/hadoop/core-site.xml
+
+# # Copy core-site.xml to Hive conf directory to ensure it's properly used
+# RUN cp /opt/hadoop/etc/hadoop/core-site.xml /opt/hive/conf/
+
+# # Set HADOOP_CLASSPATH to include the new JARs
+# ENV HADOOP_CLASSPATH=/opt/hadoop/share/hadoop/common/lib/*:/opt/hive/lib/*:$HADOOP_CLASSPATH
+
