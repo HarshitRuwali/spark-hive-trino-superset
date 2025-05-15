@@ -1,0 +1,22 @@
+<configuration>
+  <property>
+    <name>fs.s3a.access.key</name>
+    <value>A34JAH23234223232</value>
+  </property>
+  <property>
+    <name>fs.s3a.secret.key</name>
+    <value>K9/323322322</value>
+  </property>
+  <property>
+    <name>fs.s3a.endpoint</name>
+    <value>s3.amazonaws.com</value>
+  </property>
+  <property>
+    <name>fs.s3a.path.style.access</name>
+    <value>true</value>
+  </property>
+  <property>
+    <name>fs.s3.impl</name>
+    <value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>
+  </property>
+</configuration>

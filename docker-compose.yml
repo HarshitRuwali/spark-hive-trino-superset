@@ -1,0 +1,76 @@
+services:
+  mysql:
+    image: mysql:5.7
+    platform: linux/amd64
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: metastore
+      MYSQL_USER: hive
+      MYSQL_PASSWORD: hive
+    ports:
+      - "3306:3306"
+
+  hive-metastore:
+    image: bde2020/hive:2.3.2-postgresql-metastore
+    platform: linux/amd64
+    environment:
+      HIVE_METASTORE_DB_TYPE: mysql
+      HIVE_DB_NAME: metastore
+      HIVE_DB_USER: hive
+      HIVE_DB_PASSWORD: hive
+      SERVICE_NAME: metastore
+    depends_on:
+      - mysql
+    ports:
+      - "9083:9083"
+
+  spark-master:
+    image: bitnami/spark:3.4.1
+    environment:
+    - SPARK_MODE=master
+    command: bash -c "/opt/spark/bin/spark-class org.apache.spark.deploy.master.Master"
+    ports:
+      - "7077:7077"
+      - "8080:8080"
+    volumes:
+      - ./spark/conf:/opt/spark/conf
+
+  spark-worker:
+    image: bitnami/spark:3.4.1
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./spark/conf:/opt/bitnami/spark/conf
+
+  trino:
+    image: trinodb/trino:440
+    ports:
+      - "8088:8080"
+    volumes:
+      - ./trino/etc:/etc/trino
+      - ./trino/data:/var/trino/data
+
+  superset:
+    image: apache/superset
+    environment:
+      SUPERSET_LOAD_EXAMPLES: "no"
+      SUPERSET_SECRET_KEY: "supersecretkey"
+      ADMIN_USERNAME: admin
+      ADMIN_EMAIL: admin@superset.com
+      ADMIN_PASSWORD: admin
+    ports:
+      - "8089:8088"
+    depends_on:
+      - trino
+    entrypoint: >
+      /bin/sh -c "
+      superset db upgrade &&
+      superset fab create-admin --username admin --firstname Superset --lastname Admin --email admin@superset.com --password admin &&
+      superset init &&
+      superset run -h 0.0.0.0 -p 8088
+      "
