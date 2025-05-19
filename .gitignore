@@ -1,0 +1,5 @@
+# macOS .dotfile
+.DS_Store
+
+# trino logs
+trino/data/var/log/*
