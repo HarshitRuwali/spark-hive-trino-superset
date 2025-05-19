@@ -67,7 +67,16 @@ services:
       - ./spark/conf:/opt/bitnami/spark/conf
       - ./spark/jobs:/opt/bitnami/spark/jobs
     command: >
-      bash -c "sleep 20 && /opt/bitnami/spark/bin/spark-submit --master spark://spark-master:7077 /opt/bitnami/spark/jobs/init_hive_tables.py"
+      bash -c "
+        sleep 20 &&
+        mkdir -p /opt/bitnami/spark/tmp/spark-events &&
+        chmod 777 /opt/bitnami/spark/tmp/spark-events &&
+        /opt/bitnami/spark/bin/spark-submit
+          --master spark://spark-master:7077
+          --conf spark.eventLog.enabled=true
+          --conf spark.eventLog.dir=file:///opt/bitnami/spark/tmp/spark-events
+          /opt/bitnami/spark/jobs/init_hive_tables.py
+      "
     networks:
       - spark-hive-trino-net
 
