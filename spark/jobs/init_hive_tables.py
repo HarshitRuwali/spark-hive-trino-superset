@@ -6,6 +6,12 @@ from pyspark.sql import SparkSession
 def sanitize_column(name):
     return re.sub(r'\W+', '_', name.strip())
 
+def extract_table_name(s3_path: str) -> str:
+    """Derive table name from file path, removing .parquet and sanitizing."""
+    base = s3_path.rstrip("/").split("/")[-1]
+    name = re.sub(r"\.parquet$", "", base, flags=re.IGNORECASE)
+    return sanitize_column(name).lower()
+
 # Disable event logging
 conf = SparkConf().set("spark.eventLog.enabled", "false")
 
@@ -17,32 +23,56 @@ spark = SparkSession.builder \
     .enableHiveSupport() \
     .getOrCreate()
 
-# Set parameters
-table_name = "analytics"
-s3_path = "s3a://p2p-analytics/"
 
-# Read Parquet schema from S3
-print(f"Reading schema from: {s3_path}")
-df = spark.read.parquet(s3_path)
+# Set your root path (bucket level)
+s3_root = "s3a://p2p-analytics/"
 
-# Build schema string
-schema_str = ",\n  ".join([
-    f"{sanitize_column(field.name)} {field.dataType.simpleString().upper()}"
-    for field in df.schema.fields
-])
+# Get HDFS FileSystem from JVM
+fs = spark._jvm.org.apache.hadoop.fs.FileSystem.get(spark._jsc.hadoopConfiguration())
+path = spark._jvm.org.apache.hadoop.fs.Path(s3_root)
+files_status = fs.listStatus(path)
 
-# Build dynamic DDL
-ddl = f"""
-    CREATE EXTERNAL TABLE IF NOT EXISTS {table_name} ({schema_str})
-    STORED AS PARQUET
-    LOCATION '{s3_path}'
-"""
+for file_status in files_status:
+    full_path = file_status.getPath().toString()
+    if full_path.endswith("/"):
+        print(f"------ Skipping directory {full_path}")
+        continue
 
-print("Generated DDL:")
-print(ddl)
+    if full_path.endswith(".parquet"):
+        table_name = extract_table_name(full_path)
+        temp_folder_path = full_path.replace(".parquet", "") + "/"
 
-# Create table
-spark.sql(ddl)
+        print(f"------ File detected: {full_path} → Writing to folder {temp_folder_path}")
 
-print("External Hive table created successfully.")
+        try:
+            # Read the single .parquet file
+            df = spark.read.parquet(full_path)
+            # Write it into a proper Hive-compatible folder
+            df.write.mode("overwrite").parquet(temp_folder_path)
+        except Exception as e:
+            print(f"------ Failed to reprocess file {full_path}: {e}")
+            continue
+
+        # Build schema
+        seen = set()
+        schema_str = ",\n  ".join([
+            f"{sanitize_column(f.name)} {f.dataType.simpleString().upper()}"
+            for f in df.schema.fields
+            if sanitize_column(f.name).lower() not in seen and not seen.add(sanitize_column(f.name).lower())
+        ])
+
+        ddl = f"""
+            CREATE EXTERNAL TABLE IF NOT EXISTS {table_name} (
+              {schema_str}
+            )
+            STORED AS PARQUET
+            LOCATION '{temp_folder_path}'
+        """
+
+        try:
+            spark.sql(ddl)
+            print(f"------ Table `{table_name}` created at {temp_folder_path}\n")
+        except Exception as e:
+            print(f"------ Failed to create table `{table_name}`: {e}")
+
 spark.stop()
