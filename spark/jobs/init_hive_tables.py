@@ -3,8 +3,10 @@ import re
 from pyspark import SparkConf
 from pyspark.sql import SparkSession
 
+
 def sanitize_column(name):
     return re.sub(r'\W+', '_', name.strip())
+
 
 def extract_table_name(s3_path: str) -> str:
     """Derive table name from file path, removing .parquet and sanitizing."""
@@ -12,7 +14,7 @@ def extract_table_name(s3_path: str) -> str:
     name = re.sub(r"\.parquet$", "", base, flags=re.IGNORECASE)
     return sanitize_column(name).lower()
 
-# Disable event logging
+
 conf = SparkConf().set("spark.eventLog.enabled", "false")
 
 # Create SparkSession with Hive support

@@ -41,6 +41,7 @@ services:
       - "8080:8080"
     volumes:
       - ./spark/conf:/opt/bitnami/spark/conf
+      - ./spark/jobs:/opt/bitnami/spark/jobs
     networks:
       - spark-hive-trino-net
 
