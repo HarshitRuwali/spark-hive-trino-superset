@@ -53,11 +53,14 @@ services:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
     ports:
-      - "8081:8081"
+      - "8081-8082:8081"
     volumes:
       - ./spark/conf:/opt/bitnami/spark/conf
     networks:
       - spark-hive-trino-net
+    deploy:
+      mode: replicated
+      replicas: 2
 
   spark-init:
     image: bitnami/spark:3.4
