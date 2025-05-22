@@ -1,15 +1,15 @@
 services:
-  postgres:
-    image: postgres:13
-    platform: linux/amd64
-    environment:
-      POSTGRES_DB: metastore
-      POSTGRES_USER: hive
-      POSTGRES_PASSWORD: hive
-    ports:
-      - "5432:5432"
-    networks:
-      - spark-hive-trino-net
+  # postgres:
+  #   image: postgres:13
+  #   platform: linux/amd64
+  #   environment:
+  #     POSTGRES_DB: metastore
+  #     POSTGRES_USER: hive
+  #     POSTGRES_PASSWORD: hive
+  #   ports:
+  #     - "5432:5432"
+  #   networks:
+  #     - spark-hive-trino-net
 
 
   hive-metastore:
@@ -22,8 +22,8 @@ services:
       SERVICE_NAME: metastore
       HDFS_NAMENODE_URI: ""
       CORE_CONF_fs_defaultFS: s3a://p2p-analytics
-    depends_on:
-      - postgres
+    # depends_on:
+    #   - postgres
     ports:
       - "9083:9083"
     volumes:
@@ -91,6 +91,7 @@ services:
     volumes:
       - ./trino/etc:/etc/trino
       - ./trino/data:/var/trino/data
+      # - ./trino/certs/keystore.jks:/etc/trino/keystore.jks
     networks:
       - spark-hive-trino-net
 
