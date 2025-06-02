@@ -38,7 +38,7 @@ services:
       - SPARK_MODE=master
     ports:
       - "7077:7077"
-      - "8080:8080"
+      - "8082:8080"
     volumes:
       - ./spark/conf:/opt/bitnami/spark/conf
       - ./spark/jobs:/opt/bitnami/spark/jobs
@@ -53,9 +53,9 @@ services:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
     ports:
-      - "8081-8082:8081"
+      - "8083-8084:8081"
     volumes:
-      - ./spark/conf:/opt/bitnami/spark/conf
+      - ./spark/conf:/opt/bitnami/spark/conf:rw
     networks:
       - spark-hive-trino-net
     deploy:
@@ -88,10 +88,11 @@ services:
     image: trinodb/trino:440
     ports:
       - "8088:8080"
+      - "8443:8443"
     volumes:
       - ./trino/etc:/etc/trino
       - ./trino/data:/var/trino/data
-      # - ./trino/certs/keystore.jks:/etc/trino/keystore.jks
+      - ./trino/certs/keystore.jks:/etc/trino/keystore.jks
     networks:
       - spark-hive-trino-net
 

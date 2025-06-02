@@ -1,0 +1,32 @@
+{
+  "catalogs": [
+    {
+      "user": "p2p",
+      "catalog": "hive",
+      "allow": "all"
+    }
+  ],
+  "schemas": [
+    {
+      "user": "p2p",
+      "catalog": "hive",
+      "schema": ".*",
+      "owner": true
+    }
+  ],
+  "tables": [
+    {
+      "user": "p2p",
+      "catalog": "hive",
+      "schema": ".*",
+      "table": ".*",
+      "privileges": ["SELECT", "INSERT", "UPDATE", "DELETE"]
+    }
+  ],
+  "queries": [
+    {
+      "user": "p2p",
+      "allow": ["execute", "kill", "view"]
+    }
+  ]
+}
