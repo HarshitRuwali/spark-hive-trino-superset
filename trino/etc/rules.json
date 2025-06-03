@@ -21,6 +21,13 @@
       "schema": ".*",
       "table": ".*",
       "privileges": ["SELECT", "INSERT", "UPDATE", "DELETE"]
+    },
+    {
+      "user": "p2p",
+      "catalog": "system",
+      "schema": ".*",
+      "table": ".*",
+      "privileges": ["SELECT"]
     }
   ],
   "queries": [
