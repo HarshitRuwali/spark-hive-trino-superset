@@ -27,9 +27,19 @@ def extract_table_name(s3_path: str) -> str:
     :return: The sanitized table name.
     :rtype: str
     """
-    base = s3_path.rstrip("/").split("/")[-1]
-    name = re.sub(r"\.parquet$", "", base, flags=re.IGNORECASE)
-    return sanitize_column(name).lower()
+    # Always use the folder name after the bucket as the table name
+    # Example: s3://analytics-infinity/onboarding_forms_data/latest/latest.parquet -> onboarding_forms_data
+    s3_path = s3_path.rstrip("/")
+    parts = s3_path.split("/")
+    # Find the index of the bucket name (after 's3://' or 's3a://')
+    for i, part in enumerate(parts):
+        if part.endswith(".amazonaws.com") or part.startswith("s3") or part == "":
+            continue
+        bucket_index = i
+        break
+    # The table name is the next part after the bucket
+    table_name = parts[bucket_index + 1] if len(parts) > bucket_index + 1 else parts[-1]
+    return sanitize_column(table_name).lower()
 
 
 def _sync_to_hive(
@@ -62,6 +72,8 @@ def _sync_to_hive(
         .set("spark.hadoop.fs.s3a.access.key", config["aws"]["access_key"])
         .set("spark.hadoop.fs.s3a.secret.key", config["aws"]["secret_key"])
         .set("spark.hadoop.fs.s3a.endpoint", "s3.ap-south-1.amazonaws.com")
+        .set("spark.sql.warehouse.dir", "/opt/bitnami/spark/spark-warehouse")
+        .set("spark.sql.legacy.parquet.nanosAsLong", "true")
     )
 
     conf.set("spark.hadoop.fs.s3a.connection.maximum", "100")
@@ -129,13 +141,17 @@ def _sync_to_hive(
             )
 
             ddl = f"""
+                DROP TABLE IF EXISTS {table_name};
                 CREATE EXTERNAL TABLE
                 IF NOT EXISTS {table_name} ({schema_str})
                 STORED AS PARQUET LOCATION '{temp_folder_path}'
             """
 
             try:
-                spark.sql(ddl)
+                # spark.sql(ddl)
+                for stmt in ddl.strip().split(";"):
+                    if stmt.strip():
+                        spark.sql(stmt.strip())
                 logger.info(
                     f"------ Table `{table_name}` created at {temp_folder_path}\n"
                 )
@@ -189,10 +205,20 @@ def main():
 
     # sync_to_hive(arags.bucket, args.folder, config, logger)
     folders = [
-        "property_data",
-        "floor_data",
-        "floor_plans_data",
-        "seats_data"
+       "DIM_BLOCKING_REQUESTS",
+        "DIM_COMPANIES",
+        "DIM_CONTACTS",
+        "DIM_CONTRACT_BREAKDOWNS",
+        "DIM_DATE",
+        "DIM_FLOORS",
+        "DIM_HUBSPOT_DEALS",
+        "DIM_PRODUCT_TYPES",
+        "DIM_PROPERTIES",
+        "DIM_SEATS",
+        "DIM_ZONES",
+        "FACT_BLOCKING_REQUESTS",
+        "FACT_CONTRACTS",
+        "FACT_SEAT_OCCUPANCY",
     ]
     for folder in folders:
         logger.info(f"Syncing folder: {folder}")
