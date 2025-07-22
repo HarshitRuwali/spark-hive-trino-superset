@@ -43,7 +43,7 @@ def extract_table_name(s3_path: str) -> str:
 
 
 def _sync_to_hive(
-    bucket_name: str, folder_name: str, config: dict, logger: Logger
+    bucket_name: str, folder_name: str, database: str, config: dict, logger: Logger
 ) -> None:
     """Sync the saved parquet files to Hive.
 
@@ -51,6 +51,8 @@ def _sync_to_hive(
     :type bucket_name: str
     :param folder_name: The name of the folder in the S3 bucket.
     :type folder_name: str
+    :param database: The name of the Hive database to use.
+    :type database: str
     :param config: The config.
     :type config: dict
     :param logger: The logger.
@@ -90,6 +92,9 @@ def _sync_to_hive(
         .enableHiveSupport()
         .getOrCreate()
     )
+    # Create the database if it does not exist
+    spark.sql(f"CREATE DATABASE IF NOT EXISTS {database}")
+    logger.info(f"Ensured Hive schema (database) '{database}' exists.")
 
     s3_root = f"s3a://{bucket_name}/{folder_name}/latest/"
     # Get HDFS FileSystem from JVM
@@ -139,11 +144,11 @@ def _sync_to_hive(
                     and not seen.add(sanitize_column(f.name).lower())
                 ]
             )
-
+            full_table_name = f"{database}.{table_name}"
             ddl = f"""
-                DROP TABLE IF EXISTS {table_name};
+                DROP TABLE IF EXISTS {full_table_name};
                 CREATE EXTERNAL TABLE
-                IF NOT EXISTS {table_name} ({schema_str})
+                IF NOT EXISTS {full_table_name} ({schema_str})
                 STORED AS PARQUET LOCATION '{temp_folder_path}'
             """
 
@@ -153,28 +158,32 @@ def _sync_to_hive(
                     if stmt.strip():
                         spark.sql(stmt.strip())
                 logger.info(
-                    f"------ Table `{table_name}` created at {temp_folder_path}\n"
+                    f"------ Table `{full_table_name}` created at {temp_folder_path}\n"
                 )
             except Exception as e:
-                logger.exception(f"------ Failed to create table `{table_name}`: {e}")
+                logger.exception(f"------ Failed to create table `{full_table_name}`: {e}")
 
     spark.stop()
     logger.info("Hive sync daemon finished.")
 
 
 def sync_to_hive(
-    bucket_name: str, folder_name: str, config: dict, logger: Logger
+    bucket_name: str, folder_name: str, database: str, config: dict, logger: Logger
 ) -> None:
     """Main function to sync S3 Parquet files to Hive tables.
 
     :param bucket_name: The name of the S3 bucket.
     :type bucket_name: str
+    :param folder_name: The name of the folder in the S3 bucket.
+    :type folder_name: str
+    :param database: The name of the Hive database to use.
+    :type database: str
     :param config: The configuration dictionary.
     :type config: dict
     :param logger: The logger instance.
     :type logger: Logger
     """
-    _sync_to_hive(bucket_name, folder_name, config, logger)
+    _sync_to_hive(bucket_name, folder_name, database, config, logger)
 
 def main():
     """Main function to run the sync_to_hive script."""
@@ -202,7 +211,7 @@ def main():
             "secret_key": ""
         }
     }
-
+    database = "infinity"
     # sync_to_hive(arags.bucket, args.folder, config, logger)
     folders = [
        "DIM_BLOCKING_REQUESTS",
@@ -223,7 +232,7 @@ def main():
     for folder in folders:
         logger.info(f"Syncing folder: {folder}")
         # Call the sync_to_hive function for each folder
-        sync_to_hive("analytics-infinity", folder, config, logger)
+        sync_to_hive("analytics-infinity", folder, database, config, logger)
 
 
 if __name__ == "__main__":
