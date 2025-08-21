@@ -33,7 +33,7 @@ services:
       - spark-hive-trino-net
 
   spark-master:
-    image: bitnami/spark:3.4
+    build: ./spark
     environment:
       - SPARK_MODE=master
     ports:
@@ -46,7 +46,7 @@ services:
       - spark-hive-trino-net
 
   spark-worker:
-    image: bitnami/spark:3.4
+    build: ./spark
     depends_on:
       - spark-master
     environment:
@@ -63,7 +63,7 @@ services:
       replicas: 2
 
   spark-init:
-    image: bitnami/spark:3.4
+    build: ./spark
     depends_on:
       - spark-master
       - hive-metastore
@@ -85,6 +85,7 @@ services:
       - spark-hive-trino-net
 
   trino:
+  # trino-coordinator:
     image: trinodb/trino:440
     ports:
       - "8088:8080"
@@ -95,6 +96,26 @@ services:
       - ./trino/certs/keystore.jks:/etc/trino/keystore.jks
     networks:
       - spark-hive-trino-net
+    # environment:
+    #   - TRINO_NODE_ID=coordinator
+    #   - TRINO_COORDINATOR=true
+    #   - TRINO_DISCOVERY_ENABLED=true
+
+  # trino-worker:
+  #   image: trinodb/trino:440
+  #   volumes:
+  #     - ./trino/etc-worker:/etc/trino
+  #     - ./trino/data:/var/trino/data
+  #     - ./trino/certs/keystore.jks:/etc/trino/keystore.jks
+  #   networks:
+  #     - spark-hive-trino-net
+  #   environment:
+  #     - TRINO_NODE_ID=worker
+  #     - TRINO_COORDINATOR=false
+  #     - TRINO_DISCOVERY_ENABLED=true
+  #   deploy:
+  #     mode: replicated
+  #     replicas: 2
 
   # superset:
   #   image: apache/superset
