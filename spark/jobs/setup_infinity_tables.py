@@ -1,35 +1,44 @@
 """Sync S3 Parquet files to Hive tables daemon"""
 
+import logging
 import re
 import time
 from logging import Logger
 
+import trino
 from pyspark import SparkConf
-from pyspark.sql import SparkSession
-from pyspark.sql import functions as F, types as T
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
 from trino.auth import BasicAuthentication
 
-# ----------------------------
-# Trino client (optional)
-# ----------------------------
-def _get_trino_conn(cfg, logger: Logger):
-    if not cfg.get("enabled", False):
+
+def _get_trino_conn(config: dict, logger: Logger) -> trino.dbapi.Connection | None:
+    """Get a Trino connection.
+
+    :param config: The configuration
+    :type config: dict
+    :param logger: The logger
+    :type logger: Logger
+    :return: A Trino connection or None
+    :rtype: trino.dbapi.Connection | None
+    """
+    if not config.get("enabled", False):
         return None
     try:
-        import trino
         auth = None
-        if cfg.get("user") and cfg.get("password"):
+        if config.get("user") and config.get("password"):
             # Basic auth
-            auth = BasicAuthentication(cfg["user"], cfg["password"])
+            auth = BasicAuthentication(config["user"], config["password"])
         conn = trino.dbapi.connect(
-            host=cfg.get("host", "trino"),
-            port=int(cfg.get("port", 8080)),
-            user=cfg.get("user", "spark-job"),
-            http_scheme=cfg.get("http_scheme", "http"),
-            catalog=cfg.get("catalog", "hive"),
-            schema=cfg.get("schema", "default"),
+            host=config.get("host", "trino"),
+            port=int(config.get("port", 8080)),
+            user=config.get("user", "spark-job"),
+            http_scheme=config.get("http_scheme", "http"),
+            catalog=config.get("catalog", "hive"),
+            schema=config.get("schema", "default"),
             auth=auth,
-            verify=cfg.get("verify_ssl", False),
+            verify=config.get("verify_ssl", False),
         )
         return conn
     except Exception as e:
@@ -38,14 +47,28 @@ def _get_trino_conn(cfg, logger: Logger):
 
 
 def create_or_replace_latest_view_trino(
-    trino_conn, catalog: str, database: str, table_name: str, logger: Logger
-):
+    trino_conn: trino.dbapi.Connection,
+    catalog: str,
+    database: str,
+    table_name: str,
+    logger: Logger,
+) -> None:
     """
-    Create/replace a Trino view <table>_latest that selects only the newest partition,
-    using <table>$partitions to avoid scanning data files.
+    Create/replace a Trino view <table>_latest that selects only the newest partition, using <table>$partitions to avoid scanning data files.
+
+    :param trino_conn: The Trino connection
+    :type trino_conn: trino.dbapi.Connection
+    :param catalog: The catalog name
+    :type catalog: str
+    :param database: The database name
+    :type database: str
+    :param table_name: The table name
+    :type table_name: str
+    :param logger: The logger
+    :type logger: Logger
     """
-    view_fqn = f'{catalog}.{database}.{table_name}_latest'
-    table_fqn = f'{catalog}.{database}.{table_name}'
+    view_fqn = f"{catalog}.{database}.{table_name}_latest"
+    table_fqn = f"{catalog}.{database}.{table_name}"
     partitions_fqn = f'{catalog}.{database}."{table_name}$partitions"'
     ddl = f"""
         CREATE OR REPLACE VIEW {view_fqn} AS
@@ -63,9 +86,6 @@ def create_or_replace_latest_view_trino(
     except Exception as e:
         logger.warning(f"Failed to create Trino latest view for {table_fqn}: {e}")
 
-# ----------------------------
-# Utilities
-# ----------------------------
 
 def sanitize_column(name: str) -> str:
     """Sanitize column names by replacing non-alphanumeric characters with underscores.
@@ -101,8 +121,15 @@ def extract_table_name(s3_path: str) -> str:
     return sanitize_column(table_name).lower()
 
 
-def detect_snapshot_col(df):
-    """Return a column name in df that can serve as snapshot_date, else None."""
+def detect_snapshot_col(df: DataFrame) -> str | None:
+    """
+    This function searches for a column in the DataFrame that can be used as a snapshot date.
+
+    :param df: A PySpark DataFrame to search for snapshot date columns
+    :type df: DataFrame
+    :return: The name of the first matching column that can serve as snapshot_date, or None if no match is found
+    :rtype: str | None
+    """
     cols_lower = [c.lower() for c in df.columns]
     candidate_cols = ["snapshot_date"]
     for c in candidate_cols:
@@ -111,10 +138,16 @@ def detect_snapshot_col(df):
     return None
 
 
-def ensure_snapshot_date(df, full_path: str):
+def ensure_snapshot_date(df: DataFrame, full_path: str) -> tuple:
     """
     Ensure a DATE-typed column named 'snapshot_date' exists.
+
     If not present, infer from YYYY-MM-DD in path.
+    :param df: dataframe
+    :type df: DataFrame
+    :param full_path: The full S3 path to the file
+    :type full_path: str
+
     Returns: (schema, df_with_snapshot_date, inferred_date_str_or_None)
     """
     col = detect_snapshot_col(df)
@@ -138,10 +171,29 @@ def ensure_snapshot_date(df, full_path: str):
     return df.schema, df, inferred
 
 
-def build_partitioned_table(spark, database, table_name, df_schema, table_root_path):
+def build_partitioned_table(
+    spark: SparkSession,
+    database: str,
+    table_name: str,
+    df_schema: T.StructType,
+    table_root_path: str,
+) -> str:
     """
     Create (if not exists) an external, partitioned Hive table with PARTITIONED BY (snapshot_date DATE).
     Excludes 'snapshot_date' from the base column list and forces valid_to DATE if present.
+
+    :param spark: The SparkSession object.
+    :type spark: SparkSession
+    :param database: The name of the Hive database.
+    :type database: str
+    :param table_name: The name of the Hive table.
+    :type table_name: str
+    :param df_schema: The schema of the DataFrame.
+    :type df_schema: T.StructType
+    :param table_root_path: The root path for the Hive table.
+    :type table_root_path: str
+    :return: The full table name.
+    :rtype: str
     """
     seen = set()
     cols = []
@@ -183,8 +235,28 @@ def build_partitioned_table(spark, database, table_name, df_schema, table_root_p
     return full_table_name
 
 
-def build_nonpartitioned_table(spark, database, table_name, df_schema, table_location):
-    """Create/replace a non-partitioned external Hive table at a specific location."""
+def build_nonpartitioned_table(
+    spark: SparkSession,
+    database: str,
+    table_name: str,
+    df_schema: T.StructType,
+    table_location: str,
+) -> str:
+    """Create/replace a non-partitioned external Hive table at a specific location.
+
+    :param spark: The spark session client
+    :type spark: SparkSession
+    :param database: The name of the Hive database
+    :type database: str
+    :param table_name: The name of the Hive table
+    :type table_name: str
+    :param df_schema: The schema of the DataFrame
+    :type df_schema: T.StructType
+    :param table_location: The location of the Hive table
+    :type table_location: str
+    :return: The full table name
+    :rtype: str
+    """
     seen = set()
     schema_str = ",\n  ".join(
         [
@@ -214,10 +286,6 @@ def build_nonpartitioned_table(spark, database, table_name, df_schema, table_loc
             spark.sql(s)
     return full_table_name
 
-
-# ----------------------------
-# Main sync logic
-# ----------------------------
 
 def _sync_to_hive(
     bucket_name: str, folder_name: str, database: str, config: dict, logger: Logger
@@ -255,7 +323,9 @@ def _sync_to_hive(
         .set("spark.sql.warehouse.dir", "/opt/bitnami/spark/spark-warehouse")
         .set("spark.sql.legacy.parquet.nanosAsLong", "true")
         .set("spark.sql.parquet.int96RebaseModeInWrite", "CORRECTED")
-        .set("spark.sql.sources.partitionOverwriteMode", "dynamic")  # Dynamic partitioning settings (used for FACT_* writes)
+        .set(
+            "spark.sql.sources.partitionOverwriteMode", "dynamic"
+        )  # Dynamic partitioning settings (used for FACT_* writes)
         .set("hive.exec.dynamic.partition", "true")
         .set("hive.exec.dynamic.partition.mode", "nonstrict")
     )
@@ -265,7 +335,6 @@ def _sync_to_hive(
     conf.set("spark.hadoop.fs.s3a.connection.timeout", "5000")
     conf.set("spark.hadoop.fs.s3a.retry.limit", "5")
     conf.set("spark.hadoop.fs.s3a.experimental.input.fadvise", "random")
-    conf.set("spark.sql.parquet.int96RebaseModeInWrite", "CORRECTED")
 
     # Create SparkSession with Hive support
     spark = (
@@ -295,7 +364,7 @@ def _sync_to_hive(
 
     # Prepare optional Trino connection (once)
     trino_cfg = config.get("trino", {})
-    trino_conn = _get_trino_conn(trino_cfg, logger)
+    trino_conn: trino.dbapi.Connection | None = _get_trino_conn(trino_cfg, logger)
     trino_catalog = trino_cfg.get("catalog", "hive")
 
     for file_status in files_status:
@@ -335,12 +404,13 @@ def _sync_to_hive(
 
                 # If file has multiple dates (rare), you can keep all; if you expect one date per file, filter:
                 if inferred_date:
-                    df = df.filter(F.col("snapshot_date") == F.lit(inferred_date).cast("date"))
+                    df = df.filter(
+                        F.col("snapshot_date") == F.lit(inferred_date).cast("date")
+                    )
 
                 # Append data into snapshot_date partition
                 (
-                    df.write
-                    .mode("append")
+                    df.write.mode("append")
                     .partitionBy("snapshot_date")
                     .parquet(table_root_path)
                 )
@@ -351,7 +421,9 @@ def _sync_to_hive(
                     f"ANALYZE TABLE {full_table_name} PARTITION (snapshot_date) COMPUTE STATISTICS"
                 )
 
-                logger.info(f"------ Table `{full_table_name}` updated at {table_root_path}\n")
+                logger.info(
+                    f"------ Table `{full_table_name}` updated at {table_root_path}\n"
+                )
 
                 # -----------------------------
                 # NEW: Create/refresh Trino <table>_latest view (migration path)
@@ -368,7 +440,9 @@ def _sync_to_hive(
                             logger=logger,
                         )
                     except Exception as e:
-                        logger.warning(f"Could not create Trino latest view for {table_name}: {e}")
+                        logger.warning(
+                            f"Could not create Trino latest view for {table_name}: {e}"
+                        )
                 else:
                     logger.info(
                         f"Trino not configured; skipping latest view creation for {table_name}."
@@ -442,10 +516,7 @@ def sync_to_hive(
 
 def main():
     """Main function to run the sync_to_hive script."""
-    import argparse
-    import logging
 
-    parser = argparse.ArgumentParser(description="Sync S3 Parquet files to Hive tables.")
     # parser.add_argument("--bucket", required=True, help="S3 bucket name")
     # parser.add_argument("--folder", required=True, help="Folder name in the S3 bucket")
     # args = parser.parse_args()
@@ -456,15 +527,8 @@ def main():
 
     # Example config dictionary
     config = {
-        "spark": {
-            "host": "spark-master",
-            "port": "7077",
-            "app_name": "HiveSyncApp"
-        },
-        "aws": {
-            "access_key": "",
-            "secret_key": "",
-        },
+        "spark": {"host": "spark-master", "port": "7077", "app_name": "HiveSyncApp"},
+        "aws": {"access_key": "", "secret_key": ""},
         "trino": {
             "enabled": True,
             "host": "",
@@ -475,14 +539,14 @@ def main():
             "verify_ssl": False,
             "catalog": "hive",
             "schema": "infinity",
-        }
+        },
     }
 
     database = "infinity"
     folders = [
         "DIM_BLOCKING_REQUESTS",
         "DIM_COMPANIES",
-        "DIM_CONTACTS",
+        "DIM_CONTRACTS",
         "DIM_CONTRACT_BREAKDOWNS",
         "DIM_DATE",
         "DIM_FLOORS",
