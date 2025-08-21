@@ -42,6 +42,7 @@ services:
     volumes:
       - ./spark/conf:/opt/bitnami/spark/conf
       - ./spark/jobs:/opt/bitnami/spark/jobs
+      - ./spark/warehouse:/opt/bitnami/spark/spark-warehouse
     networks:
       - spark-hive-trino-net
 

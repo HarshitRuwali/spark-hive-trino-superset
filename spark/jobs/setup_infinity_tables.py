@@ -265,6 +265,7 @@ def _sync_to_hive(
     conf.set("spark.hadoop.fs.s3a.connection.timeout", "5000")
     conf.set("spark.hadoop.fs.s3a.retry.limit", "5")
     conf.set("spark.hadoop.fs.s3a.experimental.input.fadvise", "random")
+    conf.set("spark.sql.parquet.int96RebaseModeInWrite", "CORRECTED")
 
     # Create SparkSession with Hive support
     spark = (
@@ -479,7 +480,7 @@ def main():
 
     database = "infinity"
     folders = [
-       "DIM_BLOCKING_REQUESTS",
+        "DIM_BLOCKING_REQUESTS",
         "DIM_COMPANIES",
         "DIM_CONTACTS",
         "DIM_CONTRACT_BREAKDOWNS",
